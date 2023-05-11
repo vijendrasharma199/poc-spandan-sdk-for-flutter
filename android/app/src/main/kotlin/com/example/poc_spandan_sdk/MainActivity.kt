@@ -7,6 +7,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.Observer
 import `in`.sunfox.healthcare.commons.android.sericom.SeriCom
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.OnInitializationCompleteListener
+import `in`.sunfox.healthcare.commons.android.spandan_sdk.OnReportGenerationStateListener
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.SpandanSDK
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.collection.EcgTest
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.collection.EcgTestCallback
@@ -15,6 +16,8 @@ import `in`.sunfox.healthcare.commons.android.spandan_sdk.connection.OnDeviceCon
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.enums.DeviceConnectionState
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.enums.EcgPosition
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.enums.EcgTestType
+import `in`.sunfox.healthcare.java.commons.ecg_processor.conclusions.conclusion.LeadTwoConclusion
+import `in`.sunfox.healthcare.java.commons.ecg_processor.conclusions.conclusion.TwelveLeadConclusion
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -68,7 +71,12 @@ class MainActivity : FlutterActivity() {
 
                         "1" -> {
                             val ecgPositionArray = arrayOf(EcgPosition.LEAD_2)
-                            performLeadTest(EcgTestType.LEAD_TWO, ecgPositionArray, 0, ecgPositionArray.size)
+                            performLeadTest(
+                                EcgTestType.LEAD_TWO,
+                                ecgPositionArray,
+                                0,
+                                ecgPositionArray.size
+                            )
                         }
 
                         "2" -> {
@@ -79,10 +87,17 @@ class MainActivity : FlutterActivity() {
                                 EcgPosition.V4,
                                 EcgPosition.V5,
                                 EcgPosition.V6,
+                                EcgPosition.LEAD_1,
                                 EcgPosition.LEAD_2
                             )
-                            performLeadTest(EcgTestType.HYPERKALEMIA, ecgPositionArray, 0, ecgPositionArray.size)
+                            performLeadTest(
+                                EcgTestType.TWELVE_LEAD,
+                                ecgPositionArray,
+                                0,
+                                ecgPositionArray.size
+                            )
                         }
+
                         else -> {
                             SeriCom.sendCommand(argument)
                         }
@@ -117,7 +132,10 @@ class MainActivity : FlutterActivity() {
     private fun performLeadTest(
         testType: EcgTestType, ecgPositionArray: Array<EcgPosition>, start: Int, end: Int
     ) {
-        Log.d(TAG, "performLeadTest: EcgTestType --> $testType EcgPositionArray --> $ecgPositionArray")
+        Log.d(
+            TAG,
+            "performLeadTest: EcgTestType --> $testType EcgPositionArray --> $ecgPositionArray"
+        )
 
         //do lead test
         var currentEcgIndex = start
@@ -146,7 +164,8 @@ class MainActivity : FlutterActivity() {
                 override fun onElapsedTimeChanged(elapsedTime: Long, remainingTime: Long) {
                     //update only lead 2 progress bar
                     runOnUiThread {
-                        timerData.value = "Test Name : $ecgPositionName \nRemaining ${remainingTime.toInt()} : from ${elapsedTime.toInt()}"
+                        timerData.value =
+                            "Test Name : $ecgPositionName \nRemaining ${remainingTime.toInt()} : from ${elapsedTime.toInt()}"
                     }
                 }
 
@@ -160,34 +179,87 @@ class MainActivity : FlutterActivity() {
                 override fun onPositionRecordingComplete(
                     ecgPosition: EcgPosition, ecgPoints: ArrayList<Double>?
                 ) {
-                    Log.d(TAG, "onPositionRecordingComplete: EcgPosition --> $ecgPosition : EcgPoints --> ${ecgPoints!!.size}")
+                    Log.d(
+                        TAG,
+                        "onPositionRecordingComplete: EcgPosition --> $ecgPosition : EcgPoints --> ${ecgPoints!!.size}"
+                    )
 
                     //put all the ecgPoints in hashmap to generate report
                     hashMap[ecgPosition] = ecgPoints
-                    Toast.makeText(this@MainActivity, "$ecgPositionName : Test Complete $currentEcgIndex : ${lastEcgIndex - 1}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Ecg Position --> $ecgPositionName\n$currentEcgIndex : Test complete out of ${lastEcgIndex - 1}",
+                        Toast.LENGTH_SHORT
+                    ).show()
 
                     //generate report if currentTest is lastTest
                     if (currentEcgIndex == lastEcgIndex - 1) {
-                        Toast.makeText(this@MainActivity, "Report Generation work started...", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Report Generation work started...",
+                            Toast.LENGTH_SHORT
+                        ).show()
 
-                        /* //generate report
-                         span.generateReport(32, hashMap, token, object : OnReportGenerationStateListener {
-                                 override fun onReportGenerationSuccess(ecgReport: EcgReport) {
-                                     val conclusion = ecgReport.conclusion as LeadTwoConclusion
-                                     val characteristics = ecgReport.ecgCharacteristics
-                                     Log.d(TAG, "onReportGenerationSuccess:  Conclusion --> $conclusion : Characteristics --> $characteristics")
-                                     runOnUiThread {
-                                         resultData = "${conclusion.detection} ${conclusion.ecgType}"
-                                     }
-                                 }
+                        //generate report
+                        span.generateReport(
+                            32,
+                            hashMap,
+                            token,
+                            object : OnReportGenerationStateListener {
+                                override fun onReportGenerationSuccess(ecgReport: EcgReport) {
+                                    if (testType == EcgTestType.LEAD_TWO) {
+                                        val conclusion = ecgReport.conclusion as LeadTwoConclusion
+                                        val characteristics = ecgReport.ecgCharacteristics
+                                        Log.d(
+                                            TAG,
+                                            "onReportGenerationSuccess:  Conclusion --> $conclusion : Characteristics --> $characteristics"
+                                        )
+                                        runOnUiThread {
+                                            resultData.value =
+                                                "Detection --> ${conclusion.detection}\n" +
+                                                        "EcgType --> ${conclusion.ecgType}\n" +
+                                                        "BaseLine Wandering --> ${conclusion.baselineWandering}\n" +
+                                                        "pWave Type --> ${conclusion.pWaveType}\n" +
+                                                        "QRS Type --> ${conclusion.qrsType}\n" +
+                                                        "PowerLine Interference --> ${conclusion.powerLineInterference}"+
+                                                        "ECG Data --> ${ecgReport.ecgData}"
 
-                                 override fun onReportGenerationFailed(errorCode: Int, errorMsg: String) {
-                                     runOnUiThread {
-                                         Log.e(TAG, "onReportGenerationFailed: $errorMsg")
-                                         Toast.makeText(this@MainActivity, errorMsg, Toast.LENGTH_SHORT).show()
-                                     }
-                                 }
-                             })*/
+                                            Toast.makeText(this@MainActivity, "$ecgPositionName : Lead two report successful...${resultData.value}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+
+                                    if (testType == EcgTestType.TWELVE_LEAD) {
+                                        val conclusion = ecgReport.conclusion as TwelveLeadConclusion
+                                        val characteristics = ecgReport.ecgCharacteristics
+                                        Log.d(TAG, "onReportGenerationSuccess:  Conclusion --> $conclusion : Characteristics --> $characteristics")
+                                        runOnUiThread {
+                                            resultData.value =
+                                                "Detection --> ${conclusion.detection}\n" +
+                                                        "EcgType --> ${conclusion.ecgType}\n" +
+                                                        "Anomalies --> ${conclusion.anomalies}\n" +
+                                                        "Risk --> ${conclusion.risk}\n" +
+                                                        "Recommendation --> ${conclusion.recommendation}\n"+
+                                                        "ECG Data --> ${ecgReport.ecgData}"
+                                            Toast.makeText(this@MainActivity, "$ecgPositionName : Twelve Lead report successful...${resultData.value}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+
+                                override fun onReportGenerationFailed(
+                                    errorCode: Int,
+                                    errorMsg: String
+                                ) {
+                                    runOnUiThread {
+                                        Log.e(TAG, "onReportGenerationFailed: $errorMsg")
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            errorMsg,
+                                            Toast.LENGTH_SHORT
+                                        )
+                                            .show()
+                                    }
+                                }
+                            })
                     } else if (currentEcgIndex < lastEcgIndex) {//0 < 1
                         currentEcgIndex++
                         //start another task
@@ -200,9 +272,12 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun setUpConnection(){
+    private fun setUpConnection() {
 
-        SpandanSDK.initialize(application, "4u838u43u439u3", object : OnInitializationCompleteListener {
+        SpandanSDK.initialize(
+            application,
+            "4u838u43u439u3",
+            object : OnInitializationCompleteListener {
                 override fun onInitializationSuccess(authenticationToken: String) {
                     token = authenticationToken
 
@@ -213,7 +288,9 @@ class MainActivity : FlutterActivity() {
                         OnDeviceConnectionStateChangeListener {
                         override fun onDeviceConnectionStateChanged(deviceConnectionState: DeviceConnectionState) {
                             Log.d(TAG, "onDeviceConnectionStateChanged: $deviceConnectionState")
-                            deviceStatusData.value = "$deviceConnectionState"
+                            runOnUiThread {
+                                deviceStatusData.value = "$deviceConnectionState"
+                            }
                         }
 
                         override fun onDeviceTypeChange(deviceType: String) {
@@ -221,7 +298,9 @@ class MainActivity : FlutterActivity() {
 
                         override fun onDeviceVerified() {
                             Log.d(TAG, "onDeviceConnectionStateChanged: Device Verified")
-                            deviceStatusData.value = "Device Verified..."
+                            runOnUiThread {
+                                deviceStatusData.value = "Device Verified..."
+                            }
                         }
 
                     })

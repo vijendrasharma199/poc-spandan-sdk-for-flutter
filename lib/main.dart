@@ -34,7 +34,8 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   static const platform = MethodChannel('com.example.poc_spandan_sdk/sericom');
-  static const _stream = EventChannel('com.example.poc_spandan_sdk/sericom_event');
+  static const _stream =
+      EventChannel('com.example.poc_spandan_sdk/sericom_event');
 
   TextEditingController commandController = TextEditingController();
 
@@ -48,7 +49,8 @@ class _MyHomePageState extends State<MyHomePage> {
     String deviceInfoStatus = "";
 
     try {
-      final bool deviceConnectionStatus = await platform.invokeMethod('setUpConnection');
+      final bool deviceConnectionStatus =
+          await platform.invokeMethod('setUpConnection');
       deviceInfoStatus = "Device Connection --> $deviceConnectionStatus";
     } on PlatformException catch (e) {
       deviceInfoStatus = "Failed to get device data: '${e.message}'.";
@@ -66,8 +68,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
     try {
       //get send command response
-      final bool startCommand = await platform
-          .invokeMethod("sendCommand", {"command": commandController.text});
+      final bool startCommand = await platform.invokeMethod("sendCommand", {"command": commandController.text});
       commandResponse = startCommand.toString();
 
       _stream.receiveBroadcastStream().listen((data) {
