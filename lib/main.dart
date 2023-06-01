@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -71,8 +72,11 @@ class _MyHomePageState extends State<MyHomePage> {
       final bool startCommand = await platform.invokeMethod("sendCommand", {"command": commandController.text});
       commandResponse = startCommand.toString();
 
-      _stream.receiveBroadcastStream().listen((data) {
-        updateData(data, true);
+      _stream.receiveBroadcastStream().listen((dynamic data) {
+        setState(() {
+          _receivedData.writeln("Data--->\n$data");
+        });
+        //updateData(data, true);
       });
 
       /* Future.delayed(const Duration(seconds: 10), () {
@@ -85,6 +89,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
     updateData(commandResponse, false);
   }
+
 
   void updateData(String data, bool isDataWithCounter) {
     setState(() {

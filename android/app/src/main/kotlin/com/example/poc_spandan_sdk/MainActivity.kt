@@ -4,10 +4,8 @@ import android.util.Log
 import android.widget.Toast
 import androidx.annotation.NonNull
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.Observer
 import `in`.sunfox.healthcare.commons.android.sericom.SeriCom
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.OnInitializationCompleteListener
-import `in`.sunfox.healthcare.commons.android.spandan_sdk.OnReportGenerationStateListener
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.SpandanSDK
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.collection.EcgTest
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.collection.EcgTestCallback
@@ -16,8 +14,6 @@ import `in`.sunfox.healthcare.commons.android.spandan_sdk.connection.OnDeviceCon
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.enums.DeviceConnectionState
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.enums.EcgPosition
 import `in`.sunfox.healthcare.commons.android.spandan_sdk.enums.EcgTestType
-import `in`.sunfox.healthcare.java.commons.ecg_processor.conclusions.conclusion.LeadTwoConclusion
-import `in`.sunfox.healthcare.java.commons.ecg_processor.conclusions.conclusion.TwelveLeadConclusion
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -47,6 +43,13 @@ class MainActivity : FlutterActivity() {
     private var timerData = MutableLiveData<String>()
     private var resultData = MutableLiveData<String>()
 
+    data class ShareLeadData(
+        val resultString: String, val resultHashMapData: HashMap<String, ArrayList<Double>>
+    )
+
+    private var shareResultClass = MutableLiveData<ShareLeadData>()
+    private var resultHashMap = HashMap<String, ArrayList<Double>>()
+
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -67,15 +70,13 @@ class MainActivity : FlutterActivity() {
                         "0" -> {
 //                            if (::span.isInitialized) span.unbind(application)
                             SeriCom.sendCommand(argument)
+                            result.success(true)
                         }
 
                         "1" -> {
                             val ecgPositionArray = arrayOf(EcgPosition.LEAD_2)
                             performLeadTest(
-                                EcgTestType.LEAD_TWO,
-                                ecgPositionArray,
-                                0,
-                                ecgPositionArray.size
+                                EcgTestType.LEAD_TWO, ecgPositionArray, 0, ecgPositionArray.size
                             )
                         }
 
@@ -91,10 +92,7 @@ class MainActivity : FlutterActivity() {
                                 EcgPosition.LEAD_2
                             )
                             performLeadTest(
-                                EcgTestType.TWELVE_LEAD,
-                                ecgPositionArray,
-                                0,
-                                ecgPositionArray.size
+                                EcgTestType.TWELVE_LEAD, ecgPositionArray, 0, ecgPositionArray.size
                             )
                         }
 
@@ -115,9 +113,17 @@ class MainActivity : FlutterActivity() {
         eventChannel.setStreamHandler(object : StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                 //observe device response data
-                resultData.observe(this@MainActivity, Observer {
+                shareResultClass.observe(this@MainActivity) {
+                    val hashMapOfData = hashMapOf(
+                        "Key" to shareResultClass.value!!.resultString,
+                        "Value" to shareResultClass.value!!.resultHashMapData
+                    )
+                    events!!.success(hashMapOfData)
+                }
+
+                /*resultData.observe(this@MainActivity) {
                     events!!.success(resultData.value)
-                })
+                }*/
             }
 
             override fun onCancel(arguments: Any?) {
@@ -133,8 +139,7 @@ class MainActivity : FlutterActivity() {
         testType: EcgTestType, ecgPositionArray: Array<EcgPosition>, start: Int, end: Int
     ) {
         Log.d(
-            TAG,
-            "performLeadTest: EcgTestType --> $testType EcgPositionArray --> $ecgPositionArray"
+            TAG, "performLeadTest: EcgTestType --> $testType EcgPositionArray --> $ecgPositionArray"
         )
 
         //do lead test
@@ -142,7 +147,6 @@ class MainActivity : FlutterActivity() {
         val lastEcgIndex = end
 
         span = SpandanSDK.getInstance()
-
         if (currentEcgIndex < lastEcgIndex) {
             val ecgPositionName = ecgPositionArray[currentEcgIndex]
 
@@ -151,6 +155,13 @@ class MainActivity : FlutterActivity() {
                     Log.e(TAG, "onTestFailed: $statusCode")
                     runOnUiThread {
                         resultData.value = "Failed with code $statusCode"
+                        shareResultClass.value =
+                            ShareLeadData("Error-->Failed with code $statusCode", resultHashMap)
+                        Toast.makeText(
+                            this@MainActivity,
+                            "onTestFailed --->\nString->${shareResultClass.value!!.resultString}\nHashmap-->${shareResultClass.value!!.resultHashMapData}",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
 
@@ -158,6 +169,8 @@ class MainActivity : FlutterActivity() {
                     Log.d(TAG, "onTestStarted: EcgPosition -> $ecgPosition")
                     runOnUiThread {
                         resultData.value = "Started : $ecgPosition"
+                        shareResultClass.value =
+                            ShareLeadData("Started : ${ecgPosition.name}", resultHashMap)
                     }
                 }
 
@@ -170,9 +183,10 @@ class MainActivity : FlutterActivity() {
                 }
 
                 override fun onReceivedData(data: String) {
-                    Log.w(TAG, "onReceivedData: $data")
+                    //Log.w(TAG, "onReceivedData: $data")
                     runOnUiThread {
                         resultData.value = "Data : $data"
+                        //shareResultClass.value = ShareResultClass("Data : $data", resultHashMap)
                     }
                 }
 
@@ -192,6 +206,12 @@ class MainActivity : FlutterActivity() {
                         Toast.LENGTH_SHORT
                     ).show()
 
+                    //add individually ecgPosition points to hashmap
+                    val hashMap = hashMapOf(
+                        ecgPosition.name to ecgPoints
+                    )
+                    shareResultClass.value = ShareLeadData(ecgPosition.name, hashMap)
+
                     //generate report if currentTest is lastTest
                     if (currentEcgIndex == lastEcgIndex - 1) {
                         Toast.makeText(
@@ -201,19 +221,13 @@ class MainActivity : FlutterActivity() {
                         ).show()
 
                         //generate report
-                        span.generateReport(
-                            32,
-                            hashMap,
-                            token,
+                        /*span.generateReport(32, hashMap, token,
                             object : OnReportGenerationStateListener {
                                 override fun onReportGenerationSuccess(ecgReport: EcgReport) {
                                     if (testType == EcgTestType.LEAD_TWO) {
                                         val conclusion = ecgReport.conclusion as LeadTwoConclusion
                                         val characteristics = ecgReport.ecgCharacteristics
-                                        Log.d(
-                                            TAG,
-                                            "onReportGenerationSuccess:  Conclusion --> $conclusion : Characteristics --> $characteristics"
-                                        )
+                                        Log.d(TAG, "onReportGenerationSuccess:  Conclusion --> $conclusion : Characteristics --> $characteristics")
                                         runOnUiThread {
                                             resultData.value =
                                                 "Detection --> ${conclusion.detection}\n" +
@@ -259,7 +273,7 @@ class MainActivity : FlutterActivity() {
                                             .show()
                                     }
                                 }
-                            })
+                            })*/
                     } else if (currentEcgIndex < lastEcgIndex) {//0 < 1
                         currentEcgIndex++
                         //start another task
@@ -274,8 +288,7 @@ class MainActivity : FlutterActivity() {
 
     private fun setUpConnection() {
 
-        SpandanSDK.initialize(
-            application,
+        SpandanSDK.initialize(application,
             "4u838u43u439u3",
             object : OnInitializationCompleteListener {
                 override fun onInitializationSuccess(authenticationToken: String) {
